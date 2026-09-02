@@ -1514,24 +1514,65 @@
           .join("");
       }
 
+      // Phân tích chuỗi giờ "HH:mm - HH:mm" thành số giờ thực tế
+      function parseTimeRangeToHours(rangeStr) {
+        if (!rangeStr) return 0;
+        const match = rangeStr.match(/(\d{1,2})[:h](\d{2})?\s*[-–]\s*(\d{1,2})[:h](\d{2})?/i);
+        if (!match) return 0;
+        const startH = parseInt(match[1], 10);
+        const startM = parseInt(match[2] || "0", 10);
+        const endH = parseInt(match[3], 10);
+        const endM = parseInt(match[4] || "0", 10);
+
+        let diff = (endH * 60 + endM) - (startH * 60 + startM);
+        if (diff < 0) diff += 24 * 60; // trường hợp qua đêm (VD: 23:00 - 01:00)
+        return diff / 60;
+      }
+
       function updateStats() {
         let totalHours = 0;
-        let totalSessions = 0;
+        let totalSessions = 0; // Số ca/buổi học thực tế
         const topicSet = new Set();
         let activeDaysCount = 0;
 
-        const slotHourMap = {};
-        slots.forEach((s) => (slotHourMap[s.name] = s.hours || 3));
+        const slotMetaMap = {};
+        slots.forEach((s) => {
+          slotMetaMap[s.name] = {
+            hours: s.hours || parseTimeRangeToHours(s.range) || 3,
+            range: s.range,
+          };
+        });
 
         scheduleData.forEach((day) => {
           let dayHasTask = false;
           if (day.slots) {
             day.slots.forEach((slot) => {
               if (slot.tasks && slot.tasks.length > 0) {
-                totalSessions += slot.tasks.length;
-                totalHours += slotHourMap[slot.time] || 3;
+                totalSessions++; // Mỗi ca có lịch học được tính là 1 buổi học
                 if (slot.type) topicSet.add(slot.type);
                 dayHasTask = true;
+
+                // Tính giờ thực tế của ca:
+                // 1. Nếu ca chỉ có 1 task và task có khung giờ cụ thể (VD: 21:00 - 23:00 -> 2h)
+                // 2. Nếu ca có nhiều task và tất cả đều có giờ cụ thể -> cộng tổng các task
+                // 3. Nếu không có giờ cụ thể -> lấy thời lượng mặc định của ca học
+                const tasksWithTime = slot.tasks.filter((t) => t.time && parseTimeRangeToHours(t.time) > 0);
+                let slotHours = 0;
+
+                if (tasksWithTime.length === slot.tasks.length) {
+                  // Tất cả các task trong ca đều có giờ riêng -> cộng lại
+                  slot.tasks.forEach((t) => {
+                    slotHours += parseTimeRangeToHours(t.time);
+                  });
+                } else if (slot.tasks.length === 1 && tasksWithTime.length === 1) {
+                  slotHours = parseTimeRangeToHours(slot.tasks[0].time);
+                } else {
+                  // Lấy giờ chuẩn cấu hình của ca học
+                  const meta = slotMetaMap[slot.time];
+                  slotHours = meta ? meta.hours : 3;
+                }
+
+                totalHours += slotHours;
               }
             });
           }
@@ -1543,7 +1584,9 @@
         const topicsEl = document.getElementById("stat-total-topics");
         const daysEl = document.getElementById("stat-active-days");
 
-        if (hoursEl) hoursEl.textContent = Math.round(totalHours);
+        const displayHours = Number.isInteger(totalHours) ? totalHours : totalHours.toFixed(1);
+
+        if (hoursEl) hoursEl.textContent = displayHours;
         if (sessionsEl) sessionsEl.textContent = totalSessions;
         if (topicsEl) topicsEl.textContent = topicSet.size;
         if (daysEl) daysEl.textContent = activeDaysCount;
