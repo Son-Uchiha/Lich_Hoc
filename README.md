@@ -15,6 +15,10 @@
 - **Tự động nhận diện tuần & ngày hiện tại**: Highlight ngày "Hôm nay" nổi bật với quầng sáng radar ping.
 - **Đồng hồ thời gian thực (Live Clock)** đếm giây và hiển thị thứ ngày tháng tiếng Việt.
 - **4 Thẻ thống kê động**: Tổng giờ học, tổng buổi học, số môn học đang học và số ngày học liên tục.
+- **📊 Bảng Phân Bổ Thời Lượng Từng Môn**:
+  - Tự động bóc tách và tính chuẩn xác số giờ học của từng môn (IELTS/Tiếng Anh, Frontend, Rikkei Academy, Chill...).
+  - Thanh phân bổ đa sắc trực quan (Multi-segment Bar) kèm tỷ lệ phần trăm (%).
+  - Thẻ chi tiết cho mỗi môn: hiển thị số giờ học, số buổi học và thanh tiến độ tương ứng.
 
 ### 2. ⚙️ Tùy Biến Ca Học & Môn Học (Settings)
 - **Quản lý Ca Học & Khung Giờ (Slots)**:

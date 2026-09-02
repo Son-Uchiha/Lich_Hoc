@@ -563,7 +563,7 @@
             </div>
             <div>
               <p class="stat-value">
-                <span id="stat-total-hours">77</span> <span class="text-sm font-semibold text-slate-400">giờ</span>
+                <span id="stat-total-hours">53</span> <span class="text-sm font-semibold text-slate-400">giờ</span>
               </p>
               <p class="stat-label">Tổng thời gian học / tuần</p>
             </div>
@@ -601,6 +601,31 @@
               <p class="stat-label">Học đều đặn, duy trì kỷ luật 🔥</p>
             </div>
           </div>
+        </section>
+
+        <!-- ================= Phân bổ thời lượng từng môn học ================= -->
+        <section class="glass-panel rounded-[1.75rem] p-5 sm:p-6 space-y-4 animate-fade-up" style="animation-delay: 150ms">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-700/60">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-400/30 flex items-center justify-center flex-shrink-0">
+                <i data-lucide="pie-chart" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <h3 class="text-sm sm:text-base font-extrabold text-white">Thời Lượng Học Từng Môn</h3>
+                <p class="text-[11px] text-slate-400 font-medium">Thống kê chi tiết số giờ học và tỷ lệ phân bổ của từng môn trong tuần</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 self-start sm:self-auto text-xs font-semibold text-slate-400">
+              <span>Tổng thời gian:</span>
+              <span id="breakdown-total-hours" class="text-indigo-300 font-extrabold bg-slate-800/90 px-3 py-1 rounded-xl border border-slate-700/80">0 giờ</span>
+            </div>
+          </div>
+
+          <!-- Multi-segment visual bar -->
+          <div class="w-full h-2.5 rounded-full bg-slate-800 border border-slate-700/80 overflow-hidden flex gap-0.5 p-0.5" id="subject-distribution-bar"></div>
+
+          <!-- Grid cards từng môn -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-1" id="subject-hours-grid"></div>
         </section>
 
         <!-- Desktop Grid View (lg trở lên) -->
@@ -1031,8 +1056,8 @@
       // 1. DỮ LIỆU KHỞI TẠO MẪU (DEFAULT DATA)
       // =====================================================
       const DEFAULT_SLOTS = [
-        { id: "sang", name: "Sáng", range: "09:00 - 11:30", hours: 2.5, icon: "sunrise", color: "text-emerald-400" },
-        { id: "chieu", name: "Chiều", range: "14:00 - 18:00", hours: 4.0, icon: "sun", color: "text-amber-400" },
+        { id: "sang", name: "Sáng", range: "10:00 - 11:30", hours: 1.5, icon: "sunrise", color: "text-emerald-400" },
+        { id: "chieu", name: "Chiều", range: "14:00 - 17:30", hours: 3.5, icon: "sun", color: "text-amber-400" },
         { id: "toi", name: "Tối", range: "18:30 - 23:00", hours: 4.5, icon: "moon", color: "text-indigo-400" },
       ];
 
@@ -1201,9 +1226,9 @@
       // =====================================================
       // 2. KHỞI TẠO STATE TỪ LOCALSTORAGE
       // =====================================================
-      const KEY_SCHEDULE = "app_study_schedule_v2";
-      const KEY_SLOTS = "app_study_slots_v2";
-      const KEY_TOPICS = "app_study_topics_v2";
+      const KEY_SCHEDULE = "app_study_schedule_v5";
+      const KEY_SLOTS = "app_study_slots_v5";
+      const KEY_TOPICS = "app_study_topics_v5";
 
       let slots = loadData(KEY_SLOTS, DEFAULT_SLOTS);
       let topics = loadData(KEY_TOPICS, DEFAULT_TOPICS);
@@ -1535,6 +1560,13 @@
         const topicSet = new Set();
         let activeDaysCount = 0;
 
+        const topicHoursMap = {};
+        const topicSessionsMap = {};
+        topics.forEach((t) => {
+          topicHoursMap[t.id] = 0;
+          topicSessionsMap[t.id] = 0;
+        });
+
         const slotMetaMap = {};
         slots.forEach((s) => {
           slotMetaMap[s.name] = {
@@ -1552,27 +1584,30 @@
                 if (slot.type) topicSet.add(slot.type);
                 dayHasTask = true;
 
-                // Tính giờ thực tế của ca:
-                // 1. Nếu ca chỉ có 1 task và task có khung giờ cụ thể (VD: 21:00 - 23:00 -> 2h)
-                // 2. Nếu ca có nhiều task và tất cả đều có giờ cụ thể -> cộng tổng các task
-                // 3. Nếu không có giờ cụ thể -> lấy thời lượng mặc định của ca học
-                const tasksWithTime = slot.tasks.filter((t) => t.time && parseTimeRangeToHours(t.time) > 0);
+                // Tính giờ chi tiết theo khung giờ cụ thể ghi trên từng ca:
+                // Nếu task có giờ riêng (VD: Rikkei 18:30 - 21:30 = 3h, BTVN Rikkei 20:00 - 23:00 = 3h, Frontend 21:00 - 23:00 = 2h)
+                // thì tính đúng theo giờ đó, thay vì lấy cứng 4.5h của ca Tối!
                 let slotHours = 0;
+                const tasksWithTime = slot.tasks.filter((t) => t.time && parseTimeRangeToHours(t.time) > 0);
 
-                if (tasksWithTime.length === slot.tasks.length) {
-                  // Tất cả các task trong ca đều có giờ riêng -> cộng lại
-                  slot.tasks.forEach((t) => {
-                    slotHours += parseTimeRangeToHours(t.time);
-                  });
-                } else if (slot.tasks.length === 1 && tasksWithTime.length === 1) {
+                if (slot.tasks.length === 1 && tasksWithTime.length === 1) {
                   slotHours = parseTimeRangeToHours(slot.tasks[0].time);
+                } else if (tasksWithTime.length === slot.tasks.length && tasksWithTime.length > 0) {
+                  slotHours = tasksWithTime.reduce((sum, t) => sum + parseTimeRangeToHours(t.time), 0);
                 } else {
-                  // Lấy giờ chuẩn cấu hình của ca học
                   const meta = slotMetaMap[slot.time];
                   slotHours = meta ? meta.hours : 3;
                 }
 
                 totalHours += slotHours;
+
+                if (slot.type) {
+                  if (!topicHoursMap[slot.type]) topicHoursMap[slot.type] = 0;
+                  topicHoursMap[slot.type] += slotHours;
+
+                  if (!topicSessionsMap[slot.type]) topicSessionsMap[slot.type] = 0;
+                  topicSessionsMap[slot.type]++;
+                }
               }
             });
           }
@@ -1590,6 +1625,88 @@
         if (sessionsEl) sessionsEl.textContent = totalSessions;
         if (topicsEl) topicsEl.textContent = topicSet.size;
         if (daysEl) daysEl.textContent = activeDaysCount;
+
+        renderSubjectBreakdown(topicHoursMap, topicSessionsMap, totalHours);
+      }
+
+      function renderSubjectBreakdown(topicHoursMap, topicSessionsMap, totalHours) {
+        const barEl = document.getElementById("subject-distribution-bar");
+        const gridEl = document.getElementById("subject-hours-grid");
+        const totalEl = document.getElementById("breakdown-total-hours");
+
+        const displayTotal = Number.isInteger(totalHours) ? totalHours : totalHours.toFixed(1);
+        if (totalEl) totalEl.textContent = `${displayTotal} giờ`;
+
+        // Sắp xếp các môn theo số giờ học giảm dần
+        const sortedTopics = [...topics].sort((a, b) => {
+          const hA = topicHoursMap[a.id] || 0;
+          const hB = topicHoursMap[b.id] || 0;
+          return hB - hA;
+        });
+
+        // 1. Render thanh phân bổ Multi-segment Bar
+        if (barEl) {
+          const segmentsHTML = sortedTopics
+            .filter((t) => (topicHoursMap[t.id] || 0) > 0)
+            .map((t) => {
+              const h = topicHoursMap[t.id] || 0;
+              const pct = totalHours > 0 ? (h / totalHours) * 100 : 0;
+              const displayH = Number.isInteger(h) ? h : h.toFixed(1);
+              return `
+                <div
+                  class="h-full first:rounded-l-full last:rounded-r-full transition-all duration-500 hover:opacity-85 cursor-pointer"
+                  style="width: ${pct}%; background-color: ${t.colorHex}; box-shadow: 0 0 10px ${t.colorHex}66"
+                  title="${t.name}: ${displayH} giờ (${pct.toFixed(1)}%)"
+                ></div>`;
+            })
+            .join("");
+
+          barEl.innerHTML = segmentsHTML || `<div class="h-full w-full bg-slate-800 rounded-full"></div>`;
+        }
+
+        // 2. Render Grid các thẻ môn học
+        if (gridEl) {
+          gridEl.innerHTML = sortedTopics
+            .map((t) => {
+              const h = topicHoursMap[t.id] || 0;
+              const sessions = topicSessionsMap[t.id] || 0;
+              const pct = totalHours > 0 ? (h / totalHours) * 100 : 0;
+              const displayH = Number.isInteger(h) ? h : h.toFixed(1);
+
+              return `
+                <div class="glass-card rounded-2xl p-4 border border-white/10 hover:border-indigo-400/40 transition-all flex flex-col justify-between gap-3">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style="background-color: ${t.colorHex}22; color: ${t.colorHex}; border: 1px solid ${t.colorHex}44">
+                        <i data-lucide="${t.icon || 'book-open'}" class="w-4 h-4"></i>
+                      </div>
+                      <div class="min-w-0">
+                        <h4 class="font-bold text-white text-xs sm:text-sm leading-tight truncate" title="${t.name}">${t.name}</h4>
+                        <span class="text-[11px] font-semibold text-slate-400">${sessions} buổi học</span>
+                      </div>
+                    </div>
+                    <span class="text-[11px] font-bold px-2 py-0.5 rounded-md flex-shrink-0" style="background-color: ${t.colorHex}20; color: ${t.colorHex}; border: 1px solid ${t.colorHex}35">
+                      ${pct.toFixed(1)}%
+                    </span>
+                  </div>
+
+                  <div class="flex items-baseline justify-between pt-1 border-t border-slate-800/80">
+                    <span class="text-xs text-slate-400 font-medium">Thời lượng:</span>
+                    <p class="text-base sm:text-lg font-black text-white">
+                      ${displayH} <span class="text-xs font-semibold text-slate-400">giờ</span>
+                    </p>
+                  </div>
+
+                  <!-- Mini Progress Bar -->
+                  <div class="w-full h-1.5 bg-slate-800/90 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-500" style="width: ${pct}%; background-color: ${t.colorHex}; box-shadow: 0 0 8px ${t.colorHex}66"></div>
+                  </div>
+                </div>`;
+            })
+            .join("");
+
+          if (window.lucide) lucide.createIcons();
+        }
       }
 
       // =====================================================
